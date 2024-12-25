@@ -1,3 +1,4 @@
+# reporting/report_generator.py
 import os
 import json
 from datetime import datetime
@@ -11,10 +12,10 @@ class ReportGenerator:
 
     def generate_report(self, subdomain, results):
         """Generate an HTML report for the scan results."""
-        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         # Sanitize subdomain for filename
         safe_subdomain = subdomain.replace("://", "_").replace(".", "_").replace("/", "_")
-        report_file = os.path.join(self.output_dir, f"report_{safe_subdomain}_{timestamp}.html")
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        report_file = os.path.join(self.output_dir, f"report_{safe_subdomain}_.html")
 
         os.makedirs(self.output_dir, exist_ok=True)
 
@@ -39,7 +40,9 @@ class ReportGenerator:
             'Docs': [],
             'System': [],
             'User': [],
-            'Other': []
+            'Dev': [],
+            'Backup': [],
+            'Misc': []
         }
 
         patterns = {
@@ -128,7 +131,7 @@ class ReportGenerator:
                     break
 
             if not categorized:
-                categories['Other'].append(url_data)
+                categories['Misc'].append(url_data)
 
         return categories
 

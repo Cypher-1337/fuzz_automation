@@ -1,3 +1,4 @@
+# scanners/fuzzer.py
 import os
 import subprocess
 import json
@@ -8,15 +9,15 @@ class Fuzzer:
     def __init__(self, output_dir="/home/kali/fuzz"):
         self.output_dir = output_dir
         self.wordlists = {
-            "php": "/home/kali/Desktop/wordlist/php/php.txt",
-            "jsp": "/home/kali/Desktop/wordlist/jsp/jsp.txt",
-            "nodejs": "/home/kali/Desktop/wordlist/nodejs/node.txt",
-            "wordpress": "/home/kali/Desktop/wordlist/wordpress/wordpress.txt",
+            "php": "/root/wordlists/php/php.txt",
+            "jsp": "/root/wordlists/jsp/jsp.txt",
+            # "nodejs": "/home/kali/Desktop/wordlist/nodejs/node.txt",
+            # "wordpress": "/home/kali/Desktop/wordlist/wordpress/wordpress.txt",
             # "react": "/home/kali/Desktop/wordlist/react/react.txt",
-            "nextjs": "/home/kali/Desktop/wordlist/nextjs/nextjs.txt",
-            "ruby": "/home/kali/Desktop/wordlist/ruby/ruby.txt",
-            "python": "/home/kali/Desktop/wordlist/python/python.txt",
-            "general": "/home/kali/Desktop/wordlist/common.txt",
+            # "nextjs": "/home/kali/Desktop/wordlist/nextjs/nextjs.txt",
+            # "ruby": "/home/kali/Desktop/wordlist/ruby/ruby.txt",
+            # "python": "/home/kali/Desktop/wordlist/python/python.txt",
+            "general": "/root/wordlists/dirsearch.txt",
         }
         self.user_agents = [
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
@@ -45,7 +46,8 @@ class Fuzzer:
             "-ac",
             "-o", output_file,
             "-of", "json",
-            "-H", f"User-Agent: {user_agent}"
+            "-H", f"User-Agent: {user_agent}",
+            "-t", "5"
         ]
 
         try:
@@ -55,7 +57,7 @@ class Fuzzer:
                 results = json.load(f)
 
             os.remove(output_file)
-            ColorPrint.success(f"Fuzzing complete for {subdomain}. Results saved to {output_file}.")
+            ColorPrint.success(f"Fuzzing complete for {subdomain}. Results saved.")
             return results
         except subprocess.CalledProcessError as e:
             ColorPrint.error(f"Error fuzzing {subdomain}: FFUF exited with code {e.returncode}")

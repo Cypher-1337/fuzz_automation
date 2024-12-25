@@ -1,6 +1,8 @@
+# web_scanner.py
 import os
 import multiprocessing
 import mysql.connector
+import asyncio
 from utils.color_print import ColorPrint
 from utils.subdomain_utils import SubdomainUtils
 from scanners.technology_detector import TechnologyDetector
@@ -40,7 +42,7 @@ class WebScanner:
         conn = self.connect_db()
         cursor = conn.cursor()
         try:
-            query = "SELECT alive FROM live WHERE fuzz = 0 ORDER BY id DESC LIMIT %s"
+            query = "SELECT alive FROM live WHERE fuzz < 2 ORDER BY id DESC LIMIT %s"  # Only get subdomains with fuzz < 2
             cursor.execute(query, (limit,))
             subdomains = [row[0] for row in cursor.fetchall()]
             return subdomains
@@ -51,19 +53,30 @@ class WebScanner:
             cursor.close()
             self.close_db(conn)
 
-    def update_fuzz_status(self, subdomain):
+    def update_fuzz_status(self, subdomain, status, directories_found=0):
         conn = self.connect_db()
         cursor = conn.cursor()
         try:
-            query = "UPDATE live SET fuzz = 1 WHERE alive = %s"
-            cursor.execute(query, (subdomain,))
+            query = "UPDATE live SET fuzz = %s, directories_found = %s WHERE alive = %s"
+            cursor.execute(query, (status, directories_found, subdomain,))
             conn.commit()
-            ColorPrint.info(f"Updated fuzz status for {subdomain} in the database.")
+            status_message = {
+                1: f"Updated fuzz status for {subdomain} in the database with {directories_found} directories found.",
+                5: f"Fuzzing for {subdomain} timed out (2 hours). Fuzz status updated to 5."
+            }.get(status, f"Updated fuzz status for {subdomain} to {status}.")
+            ColorPrint.info(status_message)
         except mysql.connector.Error as err:
             ColorPrint.error(f"Error updating fuzz status for {subdomain}: {err}")
         finally:
             cursor.close()
             self.close_db(conn)
+
+    async def _run_fuzzer_with_timeout(self, subdomain, technology):
+        try:
+            async with asyncio.timeout(7200):  # 2 hours in seconds
+                return self.fuzzer.fuzz_subdomain(subdomain, technology)
+        except asyncio.TimeoutError:
+            return None
 
     def process_subdomain(self, subdomain):
         """Processes a single subdomain (this will be run in parallel)."""
@@ -78,29 +91,44 @@ class WebScanner:
             # Filter unwanted results
             if not SubdomainUtils.filter_unwanted_results(subdomain, tech_details):
                 ColorPrint.warning(f"Skipping {subdomain} due to unwanted criteria.")
+                self.update_fuzz_status(subdomain, 2) # Mark as skipped
                 return  # Exit the function for this subdomain
 
-            # Run fuzzing
+            # Run fuzzing with timeout
             ColorPrint.header("Starting Directory Fuzzing")
-            fuzz_results = self.fuzzer.fuzz_subdomain(subdomain, technology)
+            fuzz_results = asyncio.run(self._run_fuzzer_with_timeout(subdomain, technology))
+
+            if fuzz_results is None:
+                ColorPrint.warning(f"Fuzzing for {subdomain} timed out.")
+                self.update_fuzz_status(subdomain, 5)
+                return
+
+            # Count all found resources (directories and files)
+            directories_found_count = len(fuzz_results['results'])
 
             # Store results for the current subdomain
             results[subdomain] = {
                 "technology": technology,
                 "tech_details": tech_details,
-                "fuzz_results": fuzz_results  # Store the fuzzing results
+                "fuzz_results": fuzz_results
             }
-            self.update_fuzz_status(subdomain)
+
+            # Generate report for the current subdomain
+            self.report_generator.generate_report(subdomain, results)
+            ColorPrint.success(f"Report generated for {subdomain}.")
+
+            self.update_fuzz_status(subdomain, 1, directories_found_count) # Update with the count
 
         except KeyboardInterrupt:
             raise
         except Exception as e:
             ColorPrint.error(f"Error processing {subdomain}: {str(e)}")
+            self.update_fuzz_status(subdomain, 3) # Mark as error
             return
 
-        # Generate report for the current subdomain
-        self.report_generator.generate_report(subdomain, results)
-        ColorPrint.success(f"Report generated for {subdomain}.")
+        # Remove the report generation here as it's already done above
+        # self.report_generator.generate_report(subdomain, results)
+        # ColorPrint.success(f"Report generated for {subdomain}.")
 
     def run(self):
         try:
